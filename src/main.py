@@ -24,10 +24,11 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver import DesiredCapabilities
 from bs4 import BeautifulSoup
 import pandas as pd
-import datetime as dt
-
+# import datetime as dt
+from json import dumps
 
 # Main OpenDisser Scraper
 
@@ -35,20 +36,7 @@ import datetime as dt
 URL_DOMAIN = 'https://teacode.com/online/vak/'
 URL_FIRST_PAGE = ''
 CSV_DIR = 'csv/'
-CSV_FNAME = 'bulk-passp-'
-CSV1 = 'link-list-2016-06-17_12-51-39.csv'
-
-# Set HTTP Headers following the Ethical Web Scraping Practice
-# Note: site administrators stay healthy when our bot looks like a human
-
-# Code snippet from @andriy-ivaneyko on StackOverflow
-HEADERS = {'Accept': '*/*',
-           'Accept-Encoding': 'gzip, deflate, sdch',
-           'Accept-Language': 'ru-RU,en;q=0.8',
-           'Cache-Control': 'max-age=0',
-           'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.116 Safari/537.36'
-           }
-
+CSV_FNAME = 'categories-'
 
 # Function to ask yes/no
 def q_yn(q, default="yes"):
@@ -98,13 +86,13 @@ def get_clist(w, url=URL_DOMAIN):
     ptable = bsObj.html.body.table.table
 
     if 'Паспорт специальности' in bsObj.title.string:
-        a = ptable.tbody.find_all("tr")[1].td.text
+        a = ptable.tbody.find_all("tr")[1].td.html
         a = parse_diss_text(a)
         dh = bsObj.html.body.table.tbody.tr.td
         ztable = [[dh.h1.text,dh.h3.text,url,a]]
     else:
         ztable = [([a.text for a in row.find_all("td")] +
-                [URL_DOMAIN+j['href'] for j in row.find_all("a", href=True)]+[''])
+                [URL_DOMAIN + j['href'] for j in row.find_all("a", href=True)]+[''])
                 for row in ptable.find('tbody').find_all("tr", recursive=False)][1:-1]
 
     return ztable
@@ -115,8 +103,8 @@ def recurse_urls(w):
     def gc(c, n=2):
         return [x[n] for x in c]
 
-
     p = get_clist(w)
+    
     for i in gc(p):
         j = get_clist(w,i)
         p += j
@@ -135,7 +123,7 @@ def recurse_urls(w):
                             for iiii in gc(jjj):
                                 print(iiii)
 
-    columns = ['Код', 'Название', 'url', 'text']
+    columns = ['code', 'name', 'url', 'text']
 
     df = pd.DataFrame(p,columns=columns)
 
@@ -144,21 +132,34 @@ def recurse_urls(w):
 ########
 # Main code
 
-for key, value in enumerate(HEADERS):
-    webdriver.DesiredCapabilities.PHANTOMJS[
-        'phantomjs.page.customHeaders.{}'.format(key)] = value
 
-w = webdriver.PhantomJS()
+# Set HTTP Headers following the Ethical Web Scraping Practice
+# Note: site administrators stay healthy when our bot looks like a human
+
+# Code snippet from @andriy-ivaneyko on StackOverflow
+desired_capabilities = DesiredCapabilities.CHROME.copy()
+
+desired_capabilities['chrome.page.customHeaders.Accept'] = '*/*'
+desired_capabilities['chrome.page.customHeaders.Accept-Encoding'] = 'gzip, deflate, sdch'
+desired_capabilities['chrome.page.customHeaders.Accept-Language'] = 'ru-RU,en;q=0.8'
+desired_capabilities['chrome.page.customHeaders.Cache-Control'] = 'max-age=0'
+desired_capabilities['chrome.page.customHeaders.User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/79.0.3945.79 Chrome/79.0.3945.79 Safari/537.36'
+
+w = webdriver.Chrome(desired_capabilities=desired_capabilities)
 
 ps = q_yn(
     'Perform new Categories parsing? (It will take about 10 minutes)', default='no')
 
 if ps:
     p = recurse_urls(w)
-    now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    csv_name = CSV_DIR+CSV_FNAME+now+'.csv'
+    
+    csv_name = CSV_DIR + CSV_FNAME + '-latest.csv'
+    json_name = CSV_DIR + CSV_FNAME + '-latest.json'
+    
     p.to_csv(csv_name, header=True)
+    # @see https://pandas-docs.github.io/pandas-docs-travis/reference/api/pandas.DataFrame.to_json.html#pandas.DataFrame.to_json
+    p.to_json(json_name, force_ascii=false, orient='records')
 else:
      print('Nothing has been made. Good bye!')
 
-w.close()
+w.quit()
